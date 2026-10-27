@@ -1,20 +1,30 @@
 import sqlite3
 import asyncio
+import threading
+import os
+from flask import Flask
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
-# ================= CONFIGURATION (YAHAN APNI DETAILS DALEIN) =================
-BOT_TOKEN = "8807197307:AAEt97vbkka5seC-TjC53I6APykduXuPSbM"
-ADMIN_ID = 7961207555 # Apna Telegram ID
-CHANNEL_ID = "@AADIFYAXX09" # Apna Update Channel
-GROUP_ID = "@AADITYAMAKER" # Apna Support Group
-UPI_ID = "Aadityasharma3315@fam" 
-# =============================================================================
+# ================= CONFIGURATION =================
+BOT_TOKEN = "8785209559:AAF3_nqhd0FabrSGiHr0TQP40qX4SfwHlPw"
+ADMIN_ID = 7961207555 
+UPI_ID = "aadityasharma3315@fam"
+# =================================================
 
-# Database Setup
+# --- FLASK APP SETUP ---
+app = Flask(__name__)
+@app.route('/')
+def home():
+    return "Bot is running!"
+def run_flask():
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
+
+# --- BOT SETUP ---
 conn = sqlite3.connect("super_store.db", check_same_thread=False)
 cursor = conn.cursor()
 cursor.execute("""CREATE TABLE IF NOT EXISTS users (user_id INTEGER PRIMARY KEY, balance REAL DEFAULT 0)""")
@@ -27,26 +37,11 @@ conn.commit()
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
-# States for Admin
-class AdminStates(StatesGroup):
-    add_cat = State()
-    add_country_name = State()
-    add_country_emoji = State()
-    add_stock_price = State()
-    add_stock_details = State()
+# States for Search
+class SearchState(StatesGroup):
+    waiting_for_country = State()
 
-# --- HELPER: FORCE JOIN CHECK ---
-async def check_join(user_id):
-    try:
-        c = await bot.get_chat_member(chat_id=CHANNEL_ID, user_id=user_id)
-        g = await bot.get_chat_member(chat_id=GROUP_ID, user_id=user_id)
-        if c.status in ['member', 'administrator', 'creator'] and g.status in ['member', 'administrator', 'creator']:
-            return True
-        return False
-    except:
-        return False
-
-# --- MAIN MENU (Screenshot 3 Jaisa) ---
+# --- MAIN MENU ---
 def get_main_menu():
     kb = [
         [InlineKeyboardButton(text="🛒 Purchase Accounts", callback_data="menu_purchase")],
@@ -54,8 +49,7 @@ def get_main_menu():
          InlineKeyboardButton(text="💰 Wallet", callback_data="menu_wallet")],
         [InlineKeyboardButton(text="📦 My Orders", callback_data="menu_orders"), 
          InlineKeyboardButton(text="🎁 Referral", callback_data="menu_ref")],
-        [InlineKeyboardButton(text="📞 Support", callback_data="menu_support")],
-        [InlineKeyboardButton(text="📜 Terms & Conditions", callback_data="menu_tnc")]
+        [InlineKeyboardButton(text="📞 Support", callback_data="menu_support")]
     ]
     return InlineKeyboardMarkup(inline_keyboard=kb)
 
@@ -66,31 +60,15 @@ async def start_cmd(message: types.Message):
     cursor.execute("INSERT OR IGNORE INTO users (user_id, balance) VALUES (?, ?)", (user_id, 0))
     conn.commit()
     
-    if not await check_join(user_id):
-        kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="📢 Join Updates Channel", url=f"https://t.me/{CHANNEL_ID.replace('@', '')}")],
-            [InlineKeyboardButton(text="💬 Join Support Group", url=f"https://t.me/{GROUP_ID.replace('@', '')}")],
-            [InlineKeyboardButton(text="✅ Try Again", callback_data="verify_join")]
-        ])
-        await message.answer("⚠️ **To use this bot, you must join our updates channel and group first.**", reply_markup=kb, parse_mode="Markdown")
-        return
-
     cursor.execute("SELECT balance FROM users WHERE user_id=?", (user_id,))
     bal = cursor.fetchone()[0]
     text = f"👑 **Welcome to TG Accounts Store**\n\n🏦 **Your Balance:** ₹{bal:.2f} ($0.00)\n\n👇 Click Purchase Accounts below to browse & buy stock."
     await message.answer(text, reply_markup=get_main_menu(), parse_mode="Markdown")
 
-@dp.callback_query(F.data == "verify_join")
-async def verify_join(call: types.CallbackQuery):
-    if await check_join(call.from_user.id):
-        await call.message.delete()
-        await start_cmd(call.message)
-    else:
-        await call.answer("❌ You haven't joined both channel and group yet!", show_alert=True)
-
-# --- MENU CALLBACKS ---
+# --- MENU HANDLERS ---
 @dp.callback_query(F.data.startswith("menu_"))
 async def menu_handler(call: types.CallbackQuery):
+    await call.answer()
     action = call.data.split("_")[1]
     
     if action == "purchase":
@@ -100,40 +78,43 @@ async def menu_handler(call: types.CallbackQuery):
         bal = cursor.fetchone()[0]
         await call.message.edit_text(f"💰 **Your Wallet**\n\nCurrent Balance: ₹{bal:.2f}", reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 Back to Menu", callback_data="back_menu")]]), parse_mode="Markdown")
     elif action == "deposit":
-        text = f"💳 **Deposit Funds**\n\nUPI ID: `{UPI_ID}`\n\nPay & send screenshot to Admin: `{ADMIN_ID}`"
+        text = f"💳 **Deposit Funds**\n\nUPI ID: `{UPI_ID}`\n\nPayment karne ke baad screenshot Admin ko bhejein.\nAdmin ID: `{ADMIN_ID}`"
         await call.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 Back to Menu", callback_data="back_menu")]]), parse_mode="Markdown")
     elif action == "orders":
         cursor.execute("SELECT details, price FROM orders WHERE user_id=?", (call.from_user.id,))
         orders = cursor.fetchall()
         if not orders:
-            text = "📦 **My Orders**\n\nNo orders found."
+            text = "📦 **My Orders**\n\nAapne abhi tak kuch nahi khareeda."
         else:
             text = "📦 **My Orders**\n\n" + "\n".join([f"🔹 `{o[0]}` - ₹{o[1]}" for o in orders])
         await call.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 Back to Menu", callback_data="back_menu")]]), parse_mode="Markdown")
-    elif action in ["support", "ref", "tnc"]:
+    elif action in ["support", "ref"]:
         await call.answer("Yeh feature jald aa raha hai!", show_alert=True)
 
 @dp.callback_query(F.data == "back_menu")
 async def back_menu(call: types.CallbackQuery):
+    await call.answer()
     cursor.execute("SELECT balance FROM users WHERE user_id=?", (call.from_user.id,))
     bal = cursor.fetchone()[0]
     text = f"👑 **Welcome to TG Accounts Store**\n\n🏦 **Your Balance:** ₹{bal:.2f} ($0.00)\n\n👇 Click Purchase Accounts below to browse & buy stock."
     await call.message.edit_text(text, reply_markup=get_main_menu(), parse_mode="Markdown")
 
-# --- PURCHASE FLOW: CATEGORIES & COUNTRIES ---
+# --- PURCHASE FLOW: CATEGORIES & COUNTRIES & SEARCH ---
 async def show_categories(call: types.CallbackQuery):
     cursor.execute("SELECT id, name FROM categories")
     cats = cursor.fetchall()
     if not cats:
-        await call.answer("Admin ne abhi category nahi banayi hai!", show_alert=True)
+        await call.message.edit_text("⚠️ Admin ne abhi category nahi banayi hai!", reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 Back to Menu", callback_data="back_menu")]]))
         return
     
     kb = [[InlineKeyboardButton(text=f"🔖 {c[1]}", callback_data=f"cat_{c[0]}")] for c in cats]
+    kb.append([InlineKeyboardButton(text="🔍 Search Country", callback_data="search_country")])
     kb.append([InlineKeyboardButton(text="🔙 Back to Menu", callback_data="back_menu")])
-    await call.message.edit_text("📌 **Selected Category: Cheapest**\n\n👇 Select a category to browse stock:", reply_markup=InlineKeyboardMarkup(inline_keyboard=kb), parse_mode="Markdown")
+    await call.message.edit_text("📌 **Selected Category: Cheapest**\n\n👇 Select a category to browse stock or search:", reply_markup=InlineKeyboardMarkup(inline_keyboard=kb), parse_mode="Markdown")
 
 @dp.callback_query(F.data.startswith("cat_"))
 async def show_countries(call: types.CallbackQuery):
+    await call.answer()
     cat_id = call.data.split("_")[1]
     cursor.execute("SELECT id, name, emoji FROM countries WHERE cat_id=?", (cat_id,))
     countries = cursor.fetchall()
@@ -152,13 +133,38 @@ async def show_countries(call: types.CallbackQuery):
     
     await call.message.edit_text("👇 **Select a region to browse stock:**", reply_markup=InlineKeyboardMarkup(inline_keyboard=kb), parse_mode="Markdown")
 
-# --- PAGINATION & STOCK VIEW (Screenshot 1 Jaisa) ---
+# --- SEARCH FEATURE ---
+@dp.callback_query(F.data == "search_country")
+async def ask_search(call: types.CallbackQuery, state: FSMContext):
+    await call.answer()
+    await call.message.edit_text("🔍 **Country ka naam type karein** (jaise: India, USA, Indonesia):")
+    await state.set_state(SearchState.waiting_for_country)
+
+@dp.message(SearchState.waiting_for_country)
+async def process_search(message: types.Message, state: FSMContext):
+    search_term = message.text.strip().lower()
+    cursor.execute("SELECT id, name, emoji FROM countries WHERE LOWER(name) LIKE ?", (f"%{search_term}%",))
+    results = cursor.fetchall()
+    
+    if not results:
+        await message.answer("❌ Koi country nahi mili. Dubara try karein ya menu se select karein.")
+        await state.clear()
+        return
+    
+    kb = [[InlineKeyboardButton(text=f"{c[2]} {c[1]}", callback_data=f"cntry_{c[0]}")] for c in results]
+    kb.append([InlineKeyboardButton(text="🔙 Back to Menu", callback_data="back_menu")])
+    
+    await message.answer(f"🔍 **Search Results for '{message.text}':**", reply_markup=InlineKeyboardMarkup(inline_keyboard=kb), parse_mode="Markdown")
+    await state.clear()
+
+# --- PAGINATION & STOCK VIEW ---
 @dp.callback_query(F.data.startswith("cntry_"))
 async def show_stock_page(call: types.CallbackQuery):
+    await call.answer()
     data = call.data.split("_")
     country_id = data[1]
     page = int(data[2]) if len(data) > 2 else 1
-    limit = 6
+    limit = 5
     offset = (page - 1) * limit
 
     if country_id == "global":
@@ -171,17 +177,19 @@ async def show_stock_page(call: types.CallbackQuery):
         count_args = (country_id,)
 
     accs = cursor.fetchall()
-    
     cursor.execute(total_q, count_args)
     total_accs = cursor.fetchone()[0]
+
+    if not accs:
+        await call.message.edit_text("❌ Is category mein stock khatam hai!", reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 Back", callback_data="back_menu")]]))
+        return
 
     text = f"🇮🇳 **Available Accounts** - Page {page}\n\n⚡ Instant Delivery | 🛡️ Spam-Free\n👇 **Select an account to purchase:**"
     
     kb = []
     for a in accs:
-        kb.append([InlineKeyboardButton(text=f"💳 🇮🇳 - ₹{a[1]:.2f} ($0.00)", callback_data=f"buy_{a[0]}")])
+        kb.append([InlineKeyboardButton(text=f"💳 - ₹{a[1]:.2f} ($0.00)", callback_data=f"buy_{a[0]}")])
         
-    # Pagination Buttons
     nav_row = []
     if page > 1:
         nav_row.append(InlineKeyboardButton(text="⬅️ Back", callback_data=f"cntry_{country_id}_{page-1}"))
@@ -191,14 +199,15 @@ async def show_stock_page(call: types.CallbackQuery):
     if nav_row:
         kb.append(nav_row)
     
-    kb.append([InlineKeyboardButton(text="🔄 Refresh", callback_data=f"cntry_{country_id}_{page}")])
-    kb.append([InlineKeyboardButton(text="🔙 Main Menu", callback_data="back_menu")])
+    kb.append([InlineKeyboardButton(text="🔄 Refresh", callback_data=f"cntry_{country_id}_{page}"), 
+               InlineKeyboardButton(text="🔙 Menu", callback_data="back_menu")])
     
     await call.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=kb), parse_mode="Markdown")
 
 # --- BUY LOGIC ---
 @dp.callback_query(F.data.startswith("buy_"))
 async def process_buy(call: types.CallbackQuery):
+    await call.answer()
     acc_id = call.data.split("_")[1]
     user_id = call.from_user.id
     
@@ -209,13 +218,13 @@ async def process_buy(call: types.CallbackQuery):
     acc = cursor.fetchone()
     
     if not acc:
-        await call.answer("❌ Sold out! Kisi aur ne khareed liya.", show_alert=True)
+        await call.answer("❌ Yeh account kisi aur ne khareed liya!", show_alert=True)
         return
         
     price, details = acc
     
     if user_bal < price:
-        await call.answer(f"❌ Balance kam hai! Aapke paas ₹{user_bal} hain, iski price ₹{price} hai.", show_alert=True)
+        await call.answer(f"❌ Balance kam hai! Aapke paas ₹{user_bal} hain.", show_alert=True)
         return
         
     new_bal = user_bal - price
@@ -232,12 +241,20 @@ async def process_buy(call: types.CallbackQuery):
 async def admin_cmd(message: types.Message):
     if message.from_user.id != ADMIN_ID: return
     text = ("👑 **Admin Panel**\n\n"
-            "🔹 `/addcat CategoryName` - Nayi category (e.g. Cheapest)\n"
+            "🔹 `/addcat CategoryName` - Nayi category\n"
             "🔹 `/addcountry CategoryID CountryName Emoji` - Desh add karein\n"
             "🔹 `/addstock CountryID Price Details` - Stock add karein\n"
-            "🔹 `/addbal UserID Amount` - User ko balance dein\n\n"
+            "🔹 `/addbal UserID Amount` - User ko balance dein\n"
+            "🔹 `/users` - Total users dekhein\n\n"
             "*Note: Details mein space mat dena, underscore (_) use karein.*")
     await message.answer(text, parse_mode="Markdown")
+
+@dp.message(Command("users"))
+async def admin_users(message: types.Message):
+    if message.from_user.id != ADMIN_ID: return
+    cursor.execute("SELECT COUNT(*) FROM users")
+    total = cursor.fetchone()[0]
+    await message.answer(f"👥 Total Registered Users: **{total}**", parse_mode="Markdown")
 
 @dp.message(Command("addcat"))
 async def admin_add_cat(message: types.Message):
@@ -270,7 +287,7 @@ async def admin_add_stock(message: types.Message):
         conn.commit()
         await message.answer(f"✅ Stock added! Account ID: {cursor.lastrowid}")
     except:
-        await message.answer("Format: `/addstock 1 29 +91_9876543210|Pass123`", parse_mode="Markdown")
+        await message.answer("Format: `/addstock 1 29 user_pass_123`", parse_mode="Markdown")
 
 @dp.message(Command("addbal"))
 async def admin_add_bal(message: types.Message):
@@ -284,9 +301,11 @@ async def admin_add_bal(message: types.Message):
     except:
         await message.answer("Format: `/addbal 123456789 50`", parse_mode="Markdown")
 
+# --- MAIN FUNCTION ---
 async def main():
-    print("SUPER BOT IS RUNNING...")
+    print("BOT STARTED (RENDER/FLASK MODE)...")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
+    threading.Thread(target=run_flask, daemon=True).start()
     asyncio.run(main())
