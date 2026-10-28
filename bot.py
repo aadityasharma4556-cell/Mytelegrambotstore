@@ -12,8 +12,8 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
 # ================= CONFIGURATION =================
-BOT_TOKEN = "9073036935:AAGrmTAE2ki6au8ZITDP_W_Ln_d_-0VGnAU"
-ADMIN_ID = 7961207555 
+BOT_TOKEN = "9073036935:AAGrmTAE2ki6au8ZITDP_W_Ln_d_-0VGnAU" # Apna Token yahan daalein
+ADMIN_ID = 7961207555 # Apna Telegram ID yahan daalein
 MIN_WITHDRAW = 20.0
 # =================================================
 
@@ -30,7 +30,7 @@ conn = sqlite3.connect("task_bot.db", check_same_thread=False)
 cursor = conn.cursor()
 cursor.execute("""CREATE TABLE IF NOT EXISTS users (user_id INTEGER PRIMARY KEY, balance REAL DEFAULT 0)""")
 cursor.execute("""CREATE TABLE IF NOT EXISTS admins (user_id INTEGER PRIMARY KEY)""")
-cursor.execute("""CREATE TABLE IF NOT EXISTS channels (id INTEGER PRIMARY KEY AUTOINCREMENT, link TEXT)""")
+cursor.execute("""CREATE TABLE IF NOT EXISTS channels (link TEXT PRIMARY KEY)""")
 cursor.execute("""CREATE TABLE IF NOT EXISTS tasks (id INTEGER PRIMARY KEY AUTOINCREMENT, amount REAL, upi_id TEXT)""")
 cursor.execute("""CREATE TABLE IF NOT EXISTS withdraws (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, amount REAL, upi_id TEXT, status TEXT DEFAULT 'Pending')""")
 conn.commit()
@@ -52,6 +52,8 @@ class AddAdminState(StatesGroup):
     waiting_for_id = State()
 class WithdrawState(StatesGroup):
     waiting_for_upi = State()
+class BroadcastState(StatesGroup):
+    waiting_for_msg = State()
 
 # --- HELPERS ---
 async def is_admin(uid):
@@ -63,11 +65,13 @@ async def check_join(uid):
     cursor.execute("SELECT link FROM channels")
     channels = cursor.fetchall()
     if not channels:
-        return True # Agar koi channel set nahi hai, toh join ki zaroorat nahi
+        return True 
     for ch in channels:
         try:
-            # Channel ID nikalne ke liye link ka use karte hain
-            chat_id = ch[0].replace("https://t.me/", "@")
+            chat_id = ch[0].split("/")[-1] 
+            if not chat_id.startswith("@"):
+                chat_id = "@" + chat_id
+            
             member = await bot.get_chat_member(chat_id=chat_id, user_id=uid)
             if member.status not in ['member', 'administrator', 'creator']:
                 return False
@@ -124,7 +128,7 @@ async def verify_join(call: types.CallbackQuery):
 # --- USER FEATURES ---
 @dp.callback_query(F.data == "u_sos")
 async def u_sos(call: types.CallbackQuery):
-    await call.message.edit_text(f"🆘 **Support**\n\nAdmin se contact karein: @YourAdminUsername", reply_markup=user_menu())
+    await call.message.edit_text(f"🆘 **Support**\n\nAdmin se contact karein: @@AADITYASHARMA32", reply_markup=user_menu())
 
 @dp.callback_query(F.data == "u_getqr")
 async def u_getqr(call: types.CallbackQuery):
@@ -212,7 +216,7 @@ async def a_addchannel(call: types.CallbackQuery, state: FSMContext):
 
 @dp.message(AddChannel.waiting_for_channel)
 async def save_channel(message: types.Message, state: FSMContext):
-    cursor.execute("INSERT INTO channels (link) VALUES (?)", (message.text,))
+    cursor.execute("INSERT OR IGNORE INTO channels (link) VALUES (?)", (message.text,))
     conn.commit()
     await message.answer("✅ Channel add ho gaya! Ab users ko pehle join karna hoga.")
     await state.clear()
@@ -241,9 +245,9 @@ async def set_task_upi(message: types.Message, state: FSMContext):
 async def a_broadcast(call: types.CallbackQuery, state: FSMContext):
     if not await is_admin(call.from_user.id): return
     await call.message.edit_text("📢 Jo message sabko bhejna hai, type karein:")
-    await state.set_state(SetTask.waiting_for_amount) # Using this state temporarily
+    await state.set_state(BroadcastState.waiting_for_msg)
 
-@dp.message(SetTask.waiting_for_amount)
+@dp.message(BroadcastState.waiting_for_msg)
 async def send_broadcast(message: types.Message, state: FSMContext):
     if not await is_admin(message.from_user.id): return
     cursor.execute("SELECT user_id FROM users")
@@ -271,4 +275,4 @@ async def main():
 
 if __name__ == "__main__":
     threading.Thread(target=run_flask, daemon=True).start()
-    asyncio.run(main())
+    asyncio.run(main()) 
