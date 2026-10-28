@@ -7,13 +7,13 @@ import qrcode
 from flask import Flask
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, BufferedInputFile
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
 # ================= CONFIGURATION =================
-BOT_TOKEN = "9073036935:AAGrmTAE2ki6au8ZITDP_W_Ln_d_-0VGnAU" # Apna Token yahan daalein
-ADMIN_ID = 7961207555 # Apna Telegram ID yahan daalein
+BOT_TOKEN = "9073036935:AAGrmTAE2ki6au8ZITDP_W_Ln_d_-0VGnAU"
+ADMIN_ID = 7961207555 # Apna ID
 MIN_WITHDRAW = 20.0
 # =================================================
 
@@ -35,7 +35,6 @@ cursor.execute("""CREATE TABLE IF NOT EXISTS tasks (id INTEGER PRIMARY KEY AUTOI
 cursor.execute("""CREATE TABLE IF NOT EXISTS withdraws (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, amount REAL, upi_id TEXT, status TEXT DEFAULT 'Pending')""")
 conn.commit()
 
-# Default Admin
 cursor.execute("INSERT OR IGNORE INTO admins (user_id) VALUES (?)", (ADMIN_ID,))
 conn.commit()
 
@@ -64,26 +63,24 @@ async def is_admin(uid):
 async def check_join(uid):
     cursor.execute("SELECT link FROM channels")
     channels = cursor.fetchall()
-    if not channels:
-        return True 
+    if not channels: return True 
     for ch in channels:
         try:
             chat_id = ch[0].split("/")[-1] 
             if not chat_id.startswith("@"):
                 chat_id = "@" + chat_id
-            
             member = await bot.get_chat_member(chat_id=chat_id, user_id=uid)
             if member.status not in ['member', 'administrator', 'creator']:
                 return False
-        except:
-            return False
+        except: return False
     return True
 
 def user_menu():
     kb = [
         [InlineKeyboardButton(text="🆘 SOS (Support)", callback_data="u_sos")],
         [InlineKeyboardButton(text="💸 Withdraw", callback_data="u_withdraw"), InlineKeyboardButton(text="📸 Get QR", callback_data="u_getqr")],
-        [InlineKeyboardButton(text="📊 Pending Payment", callback_data="u_pending")]
+        [InlineKeyboardButton(text="📊 Pending Payment", callback_data="u_pending")],
+        [InlineKeyboardButton(text="📤 Direct Screenshot Bhejein", callback_data="u_direct_ss")]
     ]
     return InlineKeyboardMarkup(inline_keyboard=kb)
 
@@ -115,7 +112,7 @@ async def start_cmd(message: types.Message):
     if await is_admin(uid):
         await message.answer("👑 **Welcome Admin!**", reply_markup=admin_menu(), parse_mode="Markdown")
     else:
-        await message.answer(f"👋 **Welcome to Task Bot**\n\n🆔 Your ID: `{uid}`", reply_markup=user_menu(), parse_mode="Markdown")
+        await message.answer(f"👋 **Welcome to Task Bot**\n\n🆔 Your ID: `{uid}`\n\nScreenshot bhejein ya Get QR dabayein.", reply_markup=user_menu(), parse_mode="Markdown")
 
 @dp.callback_query(F.data == "verify_join")
 async def verify_join(call: types.CallbackQuery):
@@ -125,10 +122,18 @@ async def verify_join(call: types.CallbackQuery):
     else:
         await call.answer("❌ Aapne abhi tak join nahi kiya!", show_alert=True)
 
+# --- AUTO DELETE TASK (3 MINUTE) ---
+async def delete_task_later(chat_id, message_id, delay=180):
+    await asyncio.sleep(delay)
+    try:
+        await bot.delete_message(chat_id=chat_id, message_id=message_id)
+    except:
+        pass
+
 # --- USER FEATURES ---
 @dp.callback_query(F.data == "u_sos")
 async def u_sos(call: types.CallbackQuery):
-    await call.message.edit_text(f"🆘 **Support**\n\nAdmin se contact karein: @@AADITYASHARMA32", reply_markup=user_menu())
+    await call.message.edit_text("🆘 **Support**\n\nAdmin se contact karein: @YourAdminUsername", reply_markup=user_menu())
 
 @dp.callback_query(F.data == "u_getqr")
 async def u_getqr(call: types.CallbackQuery):
@@ -148,9 +153,12 @@ async def u_getqr(call: types.CallbackQuery):
     img.save(buf, format='PNG')
     buf.seek(0)
     
-    text = f"📸 **Task QR**\n\nAmount: ₹{amount}\nUPI: `{upi_id}`\n\nPayment karne ke baad screenshot bhejein."
-    kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="📤 Send Screenshot", callback_data="send_ss")]])
-    await call.message.answer_photo(photo=types.BufferedInputFile(buf.read(), filename="qr.png"), caption=text, reply_markup=kb, parse_mode="Markdown")
+    text = f"📸 **Task QR**\n\nAmount: ₹{amount}\nUPI: `{upi_id}`\n\n⚠️ **Yeh QR 3 minute baad delete ho jayega.**\n\nPayment karne ke baad apna screenshot bhejein."
+    
+    msg = await call.message.answer_photo(photo=BufferedInputFile(buf.read(), filename="qr.png"), caption=text, parse_mode="Markdown")
+    
+    # 3 minute baad delete karne ka task
+    asyncio.create_task(delete_task_later(call.message.chat.id, msg.message_id, 180))
 
 @dp.callback_query(F.data == "u_withdraw")
 async def u_withdraw(call: types.CallbackQuery, state: FSMContext):
@@ -189,6 +197,11 @@ async def approve_withdraw(call: types.CallbackQuery):
 @dp.callback_query(F.data == "u_pending")
 async def u_pending(call: types.CallbackQuery):
     await call.answer("Aapki koi pending payment nahi hai.", show_alert=True)
+
+@dp.callback_query(F.data == "u_direct_ss")
+async def ask_direct_ss(call: types.CallbackQuery):
+    await call.message.answer("📸 Kripya apna Payment Screenshot bhejein:")
+    await call.answer()
 
 # --- ADMIN FEATURES ---
 @dp.callback_query(F.data == "a_addadmin")
@@ -269,10 +282,38 @@ async def a_users(call: types.CallbackQuery):
     total = cursor.fetchone()[0]
     await call.answer(f"👥 Total Users: {total}", show_alert=True)
 
+# --- SCREENSHOT CATCHER (DIRECT BHEJNE PAR) ---
+@dp.message(F.photo)
+async def catch_screenshot(message: types.Message):
+    uid = message.from_user.id
+    admin_text = f"🔔 **Naya Payment Screenshot!**\n\nUser ID: `{uid}`\n\nKya aapne paisa receive kiya hai?"
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ Approve ₹10", callback_data=f"ss_app_{uid}_10")],
+        [InlineKeyboardButton(text="❌ Reject", callback_data=f"ss_rej_{uid}")]
+    ])
+    await bot.send_photo(ADMIN_ID, photo=message.photo[-1].file_id, caption=admin_text, reply_markup=kb, parse_mode="Markdown")
+    await message.answer("⏳ **Screenshot Admin ko bhej diya gaya hai.**")
+
+@dp.callback_query(F.data.startswith("ss_app_"))
+async def approve_screenshot(call: types.CallbackQuery):
+    _, uid, amt = call.data.split("_")
+    uid = int(uid)
+    amt = float(amt)
+    
+    cursor.execute("UPDATE users SET balance = balance + ? WHERE user_id=?", (amt, uid))
+    conn.commit()
+    
+    await call.message.edit_caption(caption=f"{call.message.caption}\n\n✅ **APPROVED! ₹{amt} add ho gaye.**")
+    await bot.send_message(uid, f"🎉 **Payment Approved!** ₹{amt} aapke wallet mein add ho gaye hain.")
+
+@dp.callback_query(F.data.startswith("ss_rej_"))
+async def reject_screenshot(call: types.CallbackQuery):
+    await call.message.edit_caption(caption=f"{call.message.caption}\n\n❌ **REJECTED!**")
+
 async def main():
     print("TASK BOT IS RUNNING...")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
     threading.Thread(target=run_flask, daemon=True).start()
-    asyncio.run(main()) 
+    asyncio.run(main())
