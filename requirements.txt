@@ -1,4 +1,2 @@
 aiogram
-Flask
-qrcode
-Pillow
+telethon
