@@ -2,180 +2,120 @@ import asyncio
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from aiogram.fsm.context import FSMContext
-from aiogram.fsm.state import State, StatesGroup
 from telethon import TelegramClient
 from telethon.sessions import StringSession
 from flask import Flask
 import threading
 import os
-import sqlite3
 
 # ================= CONFIGURATION =================
 BOT_TOKEN = "9165058570:AAFxCPAFVSzEXhKJ1aEPR4tLOINu80oGOvY"
 ADMIN_ID = 8909356328
+
+API_ID = 31622094 
+API_HASH = "b74736e120d25868093397f0aef9b972" 
+
+# Yahan aapki 3 IDs ki String Sessions hain
+ACCOUNTS = {
+    "AADITYA55": "1BVtsOLCBuz9k1WrAYVYG5UEk1llyhDDnQAw6gy1Ro9cq5X8ZEIn91rQGsKdQ5LQ3J0yNZ4yn48ti9tJpPcJKs11WVPIP3_xJHsSYvp0BCE88HEC4v05vRuLfkLXsO0g0P9-hGljaybxm7zLKrTqgMslLyrkPrb2FRBrxPX04u3qwQe7TT_pOk1Zicb1fMxsEId0fHT6Ov8IQ4N23ssgJJzOdDkeK4aEulixGuDZQSDVpayPgn2wg092d_3Ca2RIponVzXl091Md-ZCtH6U7jqAe73fBAPc9jt5vh8JbqO0jM8po61RXOUzWl1hpsi4xqjL-_tHz9tlITYi-jo_jp9RlmlL8JgbdTA0gLA=",
+    
+    "PATEL_NXT": "1BVtsOLCBuOH8kxfU3sQM9VuRZjxUqyhGLtbScy5fg5LmnNwTXwmqYSUqP1AvHJRJe2BfW1nZRJ13tV1jmar3bswrO1lFh3R05RrnNGoaS1UpCkoofo-Cbsfb0ySJT90lVQ_aP1nfBaujGB1ZfcLuw3FsRF25m0CRmoXVia5SyX41tSx4YtFv3UDG06xwyWHMIrmTVmMzyMvrEJePG8xQRnUvOFsv0P0egkfRr9r5G6S9DmLp3nFK278y2vas7aJeRl0xpw_kFcNINto1ijBLCKtIBwr2J4_aU2_ZR9FyeAAaA6G9e_tws4MHQKG_h450pFjU3PVai8kf1qMKaJpF9paDZCxePR0yQ=",
+    
+    "HARSHA": "1BVtsOLCBu2Q9k7e5m7Wba7TNFmnBX-WAci_6N2YcsgzT_kLxVL1NWP1oGRU3KApr1RWM2S_WBwCLzN_P1qO7qOS3waPCSP3Wu-0lpVF_3HFGKlXtdJJ817w3SSTdD618KPG7KX512xULKab1WvYA4_hr_y5xEiU54HCVBCXOgAhzPyhqquBin_1UNm70z8PecLU20Sro_9R6AW5UMFztjYU3PFhswEYaxon5ngc168wzA4CTqLo18iKG1y2gmbn5Evg2MJbGHshxUTGZkOg824VkuoR2zI3wpI8f0HR7MX37j23HiCVT12HoGH8iVm3foq3QQ-FA89b3pux1aJrNjbaJyJlc="
+}
 # =================================================
 
-# --- RENDER KE LIYE FLASK ---
 app = Flask(__name__)
 @app.route('/')
-def home(): return "Master Userbot Running!"
+def home(): return "Multi-Session Userbot Running!"
 
 def run_flask():
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
 
-# --- DATABASE ---
-conn = sqlite3.connect('sessions.db', check_same_thread=False)
-cursor = conn.cursor()
-cursor.execute("""CREATE TABLE IF NOT EXISTS accounts (id INTEGER PRIMARY KEY AUTOINCREMENT, phone TEXT, api_id TEXT, api_hash TEXT, session_string TEXT)""")
-conn.commit()
-
-# --- BOT SETUP ---
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
-class AddAccount(StatesGroup):
-    waiting_phone = State()
-    waiting_api_id = State()
-    waiting_api_hash = State()
-    waiting_otp = State()
-
-def get_main_menu():
-    kb = [
-        [InlineKeyboardButton(text="📩 Send to DMs", callback_data="send_dm")],
-        [InlineKeyboardButton(text="👥 Send to Groups", callback_data="send_group")],
-        [InlineKeyboardButton(text="➕ Add New Account", callback_data="add_acc")]
-    ]
-    return InlineKeyboardMarkup(inline_keyboard=kb)
+user_data = {}
 
 @dp.message(Command("start"))
 async def start_cmd(message: types.Message):
     if message.from_user.id != ADMIN_ID: return
-    await message.answer("🚀 **Master Userbot**\n\nKya karna hai?", reply_markup=get_main_menu())
+    await message.answer("🚀 **Multi-Account Userbot**\n\nPehle apna message type karein:")
 
-# --- ADD ACCOUNT PROCESS ---
-@dp.callback_query(F.data == "add_acc")
-async def add_account_start(call: types.CallbackQuery, state: FSMContext):
-    await call.message.answer("📱 Apna **Phone Number** bhejein (jaise: +919876543210):")
-    await state.set_state(AddAccount.waiting_phone)
-
-@dp.message(AddAccount.waiting_phone)
-async def get_phone(message: types.Message, state: FSMContext):
-    await state.update_data(phone=message.text)
-    await message.answer("🔑 Apni **API ID** bhejein:")
-    await state.set_state(AddAccount.waiting_api_id)
-
-@dp.message(AddAccount.waiting_api_id)
-async def get_api_id(message: types.Message, state: FSMContext):
-    await state.update_data(api_id=message.text)
-    await message.answer("🔑 Apni **API HASH** bhejein:")
-    await state.set_state(AddAccount.waiting_api_hash)
-
-@dp.message(AddAccount.waiting_api_hash)
-async def get_api_hash(message: types.Message, state: FSMContext):
-    await state.update_data(api_hash=message.text) # <--- Yahan Hash save ho raha hai
-    data = await state.get_data()
-    
-    api_hash = data.get('api_hash')
-    phone = data.get('phone')
-    api_id = data.get('api_id')
-    
-    await message.answer("⏳ OTP bheja ja raha hai... (Telegram par check karein)")
-    
-    try:
-        client = TelegramClient(StringSession(), int(api_id), api_hash)
-        await client.connect()
-        
-        sent_code = await client.send_code_request(phone)
-        
-        session_str = client.session.save()
-        await state.update_data(session_str=session_str, phone_code_hash=sent_code.phone_code_hash)
-        
-        await message.answer("📩 Apna **OTP** bhejein:")
-        await state.set_state(AddAccount.waiting_otp)
-    except Exception as e:
-        await message.answer(f"❌ Error: {str(e)}")
-        await state.clear()
-        await message.answer("Kya karna hai?", reply_markup=get_main_menu())
-
-@dp.message(AddAccount.waiting_otp)
-async def get_otp(message: types.Message, state: FSMContext):
-    data = await state.get_data()
-    phone = data.get('phone')
-    api_id = data.get('api_id')
-    api_hash = data.get('api_hash')
-    session_str = data.get('session_str')
-    phone_code_hash = data.get('phone_code_hash')
-    otp = message.text
-    
-    try:
-        client = TelegramClient(StringSession(session_str), int(api_id), api_hash)
-        await client.connect()
-        
-        await client.sign_in(phone, code=otp, phone_code_hash=phone_code_hash)
-        
-        final_session = client.session.save()
-        
-        cursor.execute("INSERT INTO accounts (phone, api_id, api_hash, session_string) VALUES (?, ?, ?, ?)", 
-                       (phone, api_id, api_hash, final_session))
-        conn.commit()
-        
-        await message.answer("✅ **Account Successfully Added!**\n\nAb aap is ID se message bhej sakte hain.")
-        await client.disconnect()
-    except Exception as e:
-        await message.answer(f"❌ OTP Error: {str(e)}")
-    
-    await state.clear()
-    await message.answer("Kya karna hai?", reply_markup=get_main_menu())
-
-# --- SEND MESSAGE LOGIC ---
-@dp.callback_query(F.data.startswith("send_"))
-async def ask_message(call: types.CallbackQuery):
-    target = call.data.split("_")[1] 
-    await call.message.answer(f"📝 Aapne **{target.upper()}** select kiya hai.\n\nAb apna message type karein:")
-    await call.message.edit_reply_markup(reply_markup=None)
-
-@dp.message()
-async def process_broadcast(message: types.Message):
+# 1. Message Receive karna
+@dp.message(F.text & ~F.text.startswith('/') & ~F.text.startswith('🚀'))
+async def get_message(message: types.Message):
     if message.from_user.id != ADMIN_ID: return
     
-    msg_text = message.text
-    if msg_text.startswith("/") or msg_text.startswith("🚀") or msg_text.startswith("Kya karna"): return
-
-    await message.answer("⏳ Saari IDs se message bheja ja raha hai...")
-
-    cursor.execute("SELECT api_id, api_hash, session_string FROM accounts")
-    accounts = cursor.fetchall()
+    user_data[message.from_user.id] = {"text": message.text}
     
-    if not accounts:
-        await message.answer("❌ Koi account nahi hai. Pehle 'Add New Account' karein.")
+    kb = [
+        [InlineKeyboardButton(text="📩 Send to DMs (Personal)", callback_data="target_dm")],
+        [InlineKeyboardButton(text="👥 Send to Groups", callback_data="target_group")]
+    ]
+    await message.answer("✅ Message saved!\n\nAb select karein kahan bhejna hai:", reply_markup=InlineKeyboardMarkup(inline_keyboard=kb))
+
+# 2. DM ya Group Select karna
+@dp.callback_query(F.data.startswith("target_"))
+async def select_account(call: types.CallbackQuery):
+    if call.from_user.id != ADMIN_ID: return
+    
+    target_type = call.data.split("_")[1] # 'dm' ya 'group'
+    user_data[call.from_user.id]["target"] = target_type
+    
+    # Ab ID ke buttons dikhao
+    kb = []
+    for name in ACCOUNTS.keys():
+        kb.append([InlineKeyboardButton(text=f"User: {name}", callback_data=f"acc_{name}")])
+    
+    await call.message.edit_text(f"📍 Target: **{target_type.upper()}**\n\nAb select karein kis ID se bhejna hai:", reply_markup=InlineKeyboardMarkup(inline_keyboard=kb), parse_mode="Markdown")
+
+# 3. ID Select karke Message Bhejna
+@dp.callback_query(F.data.startswith("acc_"))
+async def send_from_account(call: types.CallbackQuery):
+    if call.from_user.id != ADMIN_ID: return
+    
+    account_name = call.data.split("_")[1]
+    data = user_data.get(call.from_user.id)
+    
+    if not data or "text" not in data or "target" not in data:
+        await call.answer("❌ Data missing! Pehle message type karein.", show_alert=True)
         return
+        
+    msg_text = data["text"]
+    target_type = data["target"]
+    
+    await call.message.edit_text(f"⏳ **{account_name}** se **{target_type.upper()}** mein bheja ja raha hai...")
+    
+    try:
+        session_str = ACCOUNTS[account_name]
+        client = TelegramClient(StringSession(session_str), int(API_ID), API_HASH)
+        await client.start()
+        
+        dialogs = await client.get_dialogs()
+        
+        # Filter logic: DM ya Group
+        if target_type == "dm":
+            chats = [d.entity.id for d in dialogs if d.is_user]
+        else:
+            chats = [d.entity.id for d in dialogs if d.is_group]
 
-    success = 0
-    for api_id, api_hash, session_str in accounts:
-        try:
-            client = TelegramClient(StringSession(session_str), int(api_id), api_hash)
-            await client.start()
-            
-            dialogs = await client.get_dialogs()
-            chats = [d.entity.id for d in dialogs if d.is_user or d.is_group]
-
-            for chat_id in chats:
-                try:
-                    await client.send_message(chat_id, msg_text)
-                    success += 1
-                    await asyncio.sleep(1.5)
-                except: pass
-            
-            await client.disconnect()
-        except Exception as e:
-            print(f"Error on account {api_id}: {e}")
-
-    await message.answer(f"✅ **Success!**\n\nMessage {success} jagah bhej diya gaya.")
+        success = 0
+        for chat_id in chats:
+            try:
+                await client.send_message(chat_id, msg_text)
+                success += 1
+                await asyncio.sleep(1.5)
+            except: pass
+        
+        await client.disconnect()
+        await call.message.edit_text(f"✅ **Success!**\n\n{account_name} se {success} {target_type.upper()} mein message chala gaya.")
+    except Exception as e:
+        await call.message.edit_text(f"❌ Error: {str(e)}")
 
 async def main():
-    print("MASTER USERBOT IS RUNNING...")
+    print("FINAL USERBOT IS RUNNING...")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
