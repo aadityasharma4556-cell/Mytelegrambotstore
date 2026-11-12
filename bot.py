@@ -9,7 +9,7 @@ import threading
 import os
 
 # ================= CONFIGURATION =================
-BOT_TOKEN = "9165058570:AAFxCPAFVSzEXhKJ1aEPR4tLOINu80oGOvY"
+BOT_TOKEN ="9165058570:AAFxCPAFVSzEXhKJ1aEPR4tLOINu80oGOvY"
 ADMIN_ID = 8909356328
 
 API_ID = 31622094 
@@ -17,7 +17,7 @@ API_HASH = "b74736e120d25868093397f0aef9b972"
 
 # Yahan aapki 3 IDs ki String Sessions hain
 ACCOUNTS = {
-    "AADITYA55": "1BVtsOLCBuz9k1WrAYVYG5UEk1llyhDDnQAw6gy1Ro9cq5X8ZEIn91rQGsKdQ5LQ3J0yNZ4yn48ti9tJpPcJKs11WVPIP3_xJHsSYvp0BCE88HEC4v05vRuLfkLXsO0g0P9-hGljaybxm7zLKrTqgMslLyrkPrb2FRBrxPX04u3qwQe7TT_pOk1Zicb1fMxsEId0fHT6Ov8IQ4N23ssgJJzOdDkeK4aEulixGuDZQSDVpayPgn2wg092d_3Ca2RIponVzXl091Md-ZCtH6U7jqAe73fBAPc9jt5vh8JbqO0jM8po61RXOUzWl1hpsi4xqjL-_tHz9tlITYi-jo_jp9RlmlL8JgbdTA0gLA=",
+    "AADITYA55": "1BVtsOLBu5bcYDogmakYZ1GukIOOTQ_hLPSfk3b6ZyyYatJIJ9dFTaHLeiME7m9Ky34jki_54YjyWTJgs1XQ2AEYZwZgp3PUO51c4_gUP34Vq17YBDWL2ECHNaEfeF0ozFUm-963I2-AokFvbMC7Qm0SrdJLopoQVqjXn_Te9cgQqxxT27lIP0hyV6i1402q-w2-1EsAZs2pur45qxfB-3kdtt10SK0gClkehT5aFNmNkw73OWBF68_1mYRhN3qsBx6V1k_6s_dvGHcy_uOPU5DwVKIiZXArfSiM3qoTBFFMNKIEO0NCyQ8bpIPKnnwFgEEkF-24bai_Q7dLW6CxcVKr_IpS9U=",
     
     "PATEL_NXT": "1BVtsOLCBuOH8kxfU3sQM9VuRZjxUqyhGLtbScy5fg5LmnNwTXwmqYSUqP1AvHJRJe2BfW1nZRJ13tV1jmar3bswrO1lFh3R05RrnNGoaS1UpCkoofo-Cbsfb0ySJT90lVQ_aP1nfBaujGB1ZfcLuw3FsRF25m0CRmoXVia5SyX41tSx4YtFv3UDG06xwyWHMIrmTVmMzyMvrEJePG8xQRnUvOFsv0P0egkfRr9r5G6S9DmLp3nFK278y2vas7aJeRl0xpw_kFcNINto1ijBLCKtIBwr2J4_aU2_ZR9FyeAAaA6G9e_tws4MHQKG_h450pFjU3PVai8kf1qMKaJpF9paDZCxePR0yQ=",
     
@@ -61,10 +61,9 @@ async def get_message(message: types.Message):
 async def select_account(call: types.CallbackQuery):
     if call.from_user.id != ADMIN_ID: return
     
-    target_type = call.data.split("_")[1] # 'dm' ya 'group'
+    target_type = call.data.split("_")[1]
     user_data[call.from_user.id]["target"] = target_type
     
-    # Ab ID ke buttons dikhao
     kb = []
     for name in ACCOUNTS.keys():
         kb.append([InlineKeyboardButton(text=f"User: {name}", callback_data=f"acc_{name}")])
@@ -89,13 +88,12 @@ async def send_from_account(call: types.CallbackQuery):
     await call.message.edit_text(f"⏳ **{account_name}** se **{target_type.upper()}** mein bheja ja raha hai...")
     
     try:
-        session_str = ACCOUNTS[account_name]
+        session_str = ACCOUNTS[account_name].strip()
         client = TelegramClient(StringSession(session_str), int(API_ID), API_HASH)
         await client.start()
         
         dialogs = await client.get_dialogs()
         
-        # Filter logic: DM ya Group
         if target_type == "dm":
             chats = [d.entity.id for d in dialogs if d.is_user]
         else:
