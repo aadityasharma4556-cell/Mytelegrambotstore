@@ -74,8 +74,10 @@ async def get_api_id(message: types.Message, state: FSMContext):
 
 @dp.message(AddAccount.waiting_api_hash)
 async def get_api_hash(message: types.Message, state: FSMContext):
+    await state.update_data(api_hash=message.text) # <--- Yahan Hash save ho raha hai
     data = await state.get_data()
-    api_hash = message.text
+    
+    api_hash = data.get('api_hash')
     phone = data.get('phone')
     api_id = data.get('api_id')
     
@@ -85,10 +87,8 @@ async def get_api_hash(message: types.Message, state: FSMContext):
         client = TelegramClient(StringSession(), int(api_id), api_hash)
         await client.connect()
         
-        # OTP request bhejo
         sent_code = await client.send_code_request(phone)
         
-        # Session save karo
         session_str = client.session.save()
         await state.update_data(session_str=session_str, phone_code_hash=sent_code.phone_code_hash)
         
@@ -97,6 +97,7 @@ async def get_api_hash(message: types.Message, state: FSMContext):
     except Exception as e:
         await message.answer(f"❌ Error: {str(e)}")
         await state.clear()
+        await message.answer("Kya karna hai?", reply_markup=get_main_menu())
 
 @dp.message(AddAccount.waiting_otp)
 async def get_otp(message: types.Message, state: FSMContext):
@@ -112,13 +113,10 @@ async def get_otp(message: types.Message, state: FSMContext):
         client = TelegramClient(StringSession(session_str), int(api_id), api_hash)
         await client.connect()
         
-        # OTP verify karo
         await client.sign_in(phone, code=otp, phone_code_hash=phone_code_hash)
         
-        # Final String Session save karo
         final_session = client.session.save()
         
-        # Database mein save karo
         cursor.execute("INSERT INTO accounts (phone, api_id, api_hash, session_string) VALUES (?, ?, ?, ?)", 
                        (phone, api_id, api_hash, final_session))
         conn.commit()
@@ -131,10 +129,10 @@ async def get_otp(message: types.Message, state: FSMContext):
     await state.clear()
     await message.answer("Kya karna hai?", reply_markup=get_main_menu())
 
-# --- SEND MESSAGE LOGIC (DM/Groups) ---
+# --- SEND MESSAGE LOGIC ---
 @dp.callback_query(F.data.startswith("send_"))
 async def ask_message(call: types.CallbackQuery):
-    target = call.data.split("_")[1] # 'dm' ya 'group'
+    target = call.data.split("_")[1] 
     await call.message.answer(f"📝 Aapne **{target.upper()}** select kiya hai.\n\nAb apna message type karein:")
     await call.message.edit_reply_markup(reply_markup=None)
 
@@ -143,7 +141,7 @@ async def process_broadcast(message: types.Message):
     if message.from_user.id != ADMIN_ID: return
     
     msg_text = message.text
-    if msg_text.startswith("/") or msg_text.startswith("🚀"): return
+    if msg_text.startswith("/") or msg_text.startswith("🚀") or msg_text.startswith("Kya karna"): return
 
     await message.answer("⏳ Saari IDs se message bheja ja raha hai...")
 
@@ -161,7 +159,6 @@ async def process_broadcast(message: types.Message):
             await client.start()
             
             dialogs = await client.get_dialogs()
-            # Yahan logic lagega (DM ya Group). Abhi ke liye sab jagah bhej rahe hain.
             chats = [d.entity.id for d in dialogs if d.is_user or d.is_group]
 
             for chat_id in chats:
